@@ -18,6 +18,8 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
       - name: Run tests and build release APK
         env:
           OURNOTES_SAVE_KEY: ${{ secrets.OURNOTES_SAVE_KEY }}
