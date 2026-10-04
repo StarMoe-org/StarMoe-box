@@ -8,4 +8,5 @@ local.properties
 captures/
 *.keystore
 *.jks
+.tmp-signing/
 keystore.properties

@@ -23,6 +23,10 @@ fun encodedSecret(name: String, testByte: Int): String {
 val cryptoConfigured = !providers.environmentVariable("OURNOTES_SAVE_KEY").orNull.isNullOrBlank() &&
     !providers.environmentVariable("OURNOTES_SAVE_MAGIC").orNull.isNullOrBlank()
 
+val releaseSigningConfigured = listOf(
+    "RELEASE_STORE_FILE", "RELEASE_STORE_PASSWORD", "RELEASE_KEY_ALIAS", "RELEASE_KEY_PASSWORD",
+).all { !providers.environmentVariable(it).orNull.isNullOrBlank() }
+
 android {
     namespace = "moe.starmoe.box"
     compileSdk = 35
@@ -53,14 +57,25 @@ android {
         aidl = false
     }
 
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            create("officialRelease") {
+                storeFile = rootProject.file(providers.environmentVariable("RELEASE_STORE_FILE").get())
+                storePassword = providers.environmentVariable("RELEASE_STORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("RELEASE_KEY_ALIAS").get()
+                keyPassword = providers.environmentVariable("RELEASE_KEY_PASSWORD").get()
+            }
+        }
+    }
+
     buildTypes {
         release {
             // R8 drops the unused part of material-icons-extended and the rest; debug builds stay unshrunk.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Signed with the debug key until a release key is set up (keystore.properties).
-            signingConfig = signingConfigs.getByName("debug")
+            // Official CI requires a persistent release certificate. Source builds without it are unsigned.
+            if (releaseSigningConfigured) signingConfig = signingConfigs.getByName("officialRelease")
         }
     }
 
