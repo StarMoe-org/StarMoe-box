@@ -1,0 +1,31 @@
+name: Android
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Run tests and build release APK
+        env:
+          OURNOTES_SAVE_KEY: ${{ secrets.OURNOTES_SAVE_KEY }}
+          OURNOTES_SAVE_MAGIC: ${{ secrets.OURNOTES_SAVE_MAGIC }}
+        run: ./gradlew testDebugUnitTest assembleRelease --no-daemon --stacktrace
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: starmoe-box-release
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
