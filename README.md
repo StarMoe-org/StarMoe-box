@@ -80,7 +80,12 @@ JDK 17, Android SDK 35. `local.properties` points at the SDK (`sdk.dir=…`).
 Behind a slow network, point Gradle at a local proxy for the first dependency download, e.g. mihomo:
 `./gradlew … -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=7897 -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=7897`.
 
-Release builds are signed with the debug key until a release keystore is configured.
+Pull requests and main builds run the unit tests and produce a debug APK using the test save parameters.
+Source release builds are unsigned unless a release keystore is configured.
+
+The app version is defined by `appVersionName` and `appVersionCode` in `gradle.properties`. Each release increments
+the version code and uses a tag matching `v<appVersionName>`. Tag builds require the save parameters and release
+signing secrets, then verify the APK's package, version and signature before uploading it.
 
 ## Save key
 
