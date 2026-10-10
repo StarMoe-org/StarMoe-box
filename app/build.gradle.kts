@@ -35,8 +35,8 @@ android {
         applicationId = "moe.starmoe.box"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 3
+        versionName = "0.1.3"
 
         // Logto v3 SDK: the redirect URI is <scheme>://<applicationId>/callback.
         manifestPlaceholders["logtoRedirectScheme"] = "moe.starmoe.box"
