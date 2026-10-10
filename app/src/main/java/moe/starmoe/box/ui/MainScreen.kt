@@ -72,6 +72,7 @@ import moe.starmoe.box.net.StoredSave
 import moe.starmoe.box.save.FoundSave
 import moe.starmoe.box.save.GameServer
 import moe.starmoe.box.save.SafSaveSource
+import moe.starmoe.box.save.SaveExport
 import moe.starmoe.box.shizuku.ShizukuShell
 import java.text.DateFormat
 import java.util.Date
@@ -82,6 +83,9 @@ fun MainScreen(vm: MainViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
     val activity = LocalContext.current as android.app.Activity
     val snackbar = remember { SnackbarHostState() }
+    val exportPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(SaveExport.MIME_TYPE)) {
+        vm.completeExport(it)
+    }
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
     LaunchedEffect(state.message) {
@@ -198,7 +202,12 @@ fun MainScreen(vm: MainViewModel) {
                     SectionHeader("本机存档", action = if (state.user != null && found.size > 1) "全部上传" else null, onAction = vm::uploadAll)
                 }
                 items(found, key = { it.key + it.source }) { save ->
-                    FoundSaveCard(save, state.uploads[save.key] ?: UploadState.Idle, canUpload = state.user != null) { vm.upload(save) }
+                    FoundSaveCard(
+                        save, state.uploads[save.key] ?: UploadState.Idle,
+                        canUpload = state.user != null, exporting = state.exporting,
+                        onExport = { vm.prepareExport(save)?.let { exportPicker.launch(it) } },
+                        onUpload = { vm.upload(save) },
+                    )
                 }
             }
             if (state.user != null) {
@@ -464,7 +473,7 @@ private fun SectionHeader(title: String, action: String? = null, onAction: () ->
 }
 
 @Composable
-private fun FoundSaveCard(save: FoundSave, upload: UploadState, canUpload: Boolean, onUpload: () -> Unit) {
+private fun FoundSaveCard(save: FoundSave, upload: UploadState, canUpload: Boolean, exporting: Boolean, onExport: () -> Unit, onUpload: () -> Unit) {
     OutlinedCardBox {
         ListItem(
             colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
@@ -498,6 +507,11 @@ private fun FoundSaveCard(save: FoundSave, upload: UploadState, canUpload: Boole
                 }
             },
         )
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = onExport, enabled = !exporting) { Text(if (exporting) "正在导出…" else "导出 JSON") }
+            Spacer(Modifier.width(12.dp))
+            Text("玩家数据备份", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -533,7 +547,7 @@ private fun ServerPickerDialog(kind: PickKind, onPick: (GameServer) -> Unit, onD
                 Text(
                     when (kind) {
                         PickKind.FOLDER -> "复制出来的文件夹看不出来自哪个服，请先选择，然后选中那个账号文件夹（或它的上一层）。"
-                        PickKind.FILES -> "文件本身看不出来自哪个服，请先选择。可以一次多选账号文件夹里的文件，或电脑取包工具生成的 zip。"
+                        PickKind.FILES -> "请选择文件原来的服务器。可多选游戏存档文件、Box 导出的 JSON，或电脑取包工具生成的 zip。"
                     },
                 )
                 Spacer(Modifier.size(8.dp))
@@ -557,7 +571,7 @@ private fun ServerPickerDialog(kind: PickKind, onPick: (GameServer) -> Unit, onD
 @Composable
 private fun Footnote() {
     Text(
-        "存档在手机上解密后，只上传其中的玩家数据（_player），原样不做任何改动；只读取游戏自己的存档文件，不会修改或删除任何东西。\n\n开发灵感来自 @禁祀物tab，感谢。",
+        "存档在手机上解密后，可上传或导出其中的玩家数据（_player），原样不做任何改动。导出的 JSON 无需登录，可通过「选择文件」重新导入 Box；它不是可直接恢复到游戏的完整存档。只读取游戏文件，不会修改或删除。\n\n开发灵感来自 @禁祀物tab，感谢。",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),

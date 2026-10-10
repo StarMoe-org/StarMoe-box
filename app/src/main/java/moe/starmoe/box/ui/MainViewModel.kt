@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,6 +22,7 @@ import moe.starmoe.box.save.FoundSave
 import moe.starmoe.box.save.GameServer
 import moe.starmoe.box.save.SafSaveSource
 import moe.starmoe.box.save.SaveCollector
+import moe.starmoe.box.save.SaveExport
 import moe.starmoe.box.save.ScanResult
 import moe.starmoe.box.save.ShizukuSaveSource
 import moe.starmoe.box.shizuku.ShizukuShell
@@ -63,6 +65,7 @@ data class UiState(
     /** Saves read from a picked folder or files; the user named their server when picking. */
     val picked: List<FoundSave> = emptyList(),
     val message: String? = null,
+    val exporting: Boolean = false,
 ) {
     val scanning get() = scans.values.any { it is ServerScan.Scanning }
     val busy get() = scanning || importing
@@ -73,6 +76,45 @@ data class UiState(
 }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
+    // Kept in the ViewModel so rotation while the document picker is open retains the selected snapshot.
+    private var pendingExport: FoundSave? = null
+
+    fun prepareExport(save: FoundSave): String? {
+        if (pendingExport != null || _state.value.exporting) return null
+        pendingExport = save
+        _state.update { it.copy(exporting = true) }
+        return SaveExport.fileName(save)
+    }
+
+    fun completeExport(uri: Uri?) {
+        val save = pendingExport ?: run {
+            if (uri != null) _state.update { it.copy(message = "应用已重启，请重新选择存档导出。") }
+            return
+        }
+        pendingExport = null
+        if (uri == null) {
+            _state.update { it.copy(exporting = false) }
+            return
+        }
+        _state.update { it.copy(exporting = true) }
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val resolver = getApplication<Application>().contentResolver
+                    val output = resolver.openOutputStream(uri, "wt") ?: error("无法打开目标文件")
+                    output.use { it.write(SaveExport.encode(save)) }
+                }
+                _state.update { it.copy(message = "已导出玩家数据备份") }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update { it.copy(message = "导出失败：${e.message ?: e.javaClass.simpleName}") }
+            } finally {
+                _state.update { it.copy(exporting = false) }
+            }
+        }
+    }
+
     private val passport = Passport(application)
     private val api = SavesApi()
 
@@ -234,12 +276,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Reads a folder the user picked (e.g. the account folder copied out of Android/data). */
-    fun importTree(tree: Uri, server: GameServer) = importWith(server, "这个文件夹里没有能解密的存档。") { resolver, collector ->
+    fun importTree(tree: Uri, server: GameServer) = importWith(server, "这个文件夹里没有所选服务器的存档或 Box 备份。") { resolver, collector ->
         SafSaveSource.walkTree(resolver, tree, collector, ::progress)
     }
 
     /** Reads files the user picked: save files, or the PC tool's zip. */
-    fun importFiles(uris: List<Uri>, server: GameServer) = importWith(server, "选择的文件里没有能解密的存档。") { resolver, collector ->
+    fun importFiles(uris: List<Uri>, server: GameServer) = importWith(server, "选择的文件里没有所选服务器的存档或 Box 备份。") { resolver, collector ->
         SafSaveSource.readDocuments(resolver, uris, collector, ::progress)
     }
 

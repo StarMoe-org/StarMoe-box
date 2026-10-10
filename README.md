@@ -16,7 +16,8 @@ turns up in both, the newer file wins.
 
 ## How it works
 
-1. **Sign in** with StarMoe Passport (Logto at `passport.star.moe`) in a Custom Tab. The app asks for an access
+1. **Sign in** with StarMoe Passport (Logto at `passport.star.moe`) in a Custom Tab when uploading. Reading and
+   exporting local player data do not require login. The app asks for an access
    token for the API resource `https://passport.bdon.moe` with `saves:read saves:write`.
 2. **Read.** Since Android 11, `Android/data/<package>/` is readable only by the shell user (what adb runs as).
    Shizuku lends that identity over wireless debugging, so no PC and no root are needed. The app lists
@@ -45,6 +46,21 @@ A picked folder or file does not say which build it came from, so the user names
 the same `SaveCollector`: each small file is tried, the ones that decrypt to a valid `_player` are saves, and
 the newest copy of an account wins. The game's asset caches (`EncryptedBundles`, `Addressables`, …) are never
 entered.
+
+### Export a local backup
+
+After reading a save, tap **导出 JSON** on its **本机存档** card and choose a destination in the system file
+picker. No Passport login or server connection is needed. Cancelling the picker does not export anything.
+The filename is `starmoe-{intl|jp}-{profileId}.json`; the player data is plaintext, so keep the file private.
+
+The versioned JSON envelope contains `_starmoeBox` (`version: 1`, `server`, original file `modifiedAt` in
+Unix milliseconds) and the original `_player` bytes. Unknown fields, large numeric IDs, whitespace and
+number formatting are preserved. This backs up **player data**, not the full encrypted game save; it cannot
+be copied into the game to restore an account, and does not back up the game's other files or resources.
+
+To use it again, choose **选择文件**, select its original game server, then pick the exported JSON (or a
+folder/zip containing it). Box checks the envelope version, server and player ID and uses the original save
+timestamp when selecting the newest copy. Exports do not alter or delete game files or cloud saves.
 
 ## Configuration
 

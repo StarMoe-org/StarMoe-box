@@ -3,7 +3,8 @@ package moe.starmoe.box.save
 /**
  * Turns candidate files into account saves, the same way whatever the files came from (Shizuku, a granted game
  * directory, a picked folder or files). Every candidate is tried: names are content hashes that change between
- * versions, so a file is a save exactly when it decrypts to JSON with a valid `_player`. When an account turns up
+ * versions, so encrypted saves are recognized by decrypted JSON with a valid `_player`. Versioned Box JSON
+ * exports are also accepted for the selected server, using their original save time. When an account turns up
  * more than once (both international packages, old copies), the newest file wins; ties keep the first seen.
  */
 class SaveCollector(private val server: GameServer?) {
@@ -17,6 +18,12 @@ class SaveCollector(private val server: GameServer?) {
 
     /** Offers one file's bytes. Returns true when it was a save. */
     fun offer(bytes: ByteArray, source: String, modifiedAt: Long): Boolean {
+        val exported = SaveExport.decode(bytes)
+        if (exported != null) {
+            if (server != null && exported.server != server) return false
+            remember(PlayerData(exported.info, exported.player), source, exported.modifiedAt)
+            return true
+        }
         if (!SaveCodec.looksLikeSave(bytes)) return false
         val plain = SaveCodec.decrypt(bytes) ?: return false
         val player = SaveCodec.extractPlayer(plain)
@@ -24,11 +31,15 @@ class SaveCollector(private val server: GameServer?) {
             if (SaveCodec.hasPlayer(plain)) unreadable++
             return false
         }
+        remember(player, source, modifiedAt)
+        return true
+    }
+
+    private fun remember(player: PlayerData, source: String, modifiedAt: Long) {
         val previous = newest[player.info.accountId]
         if (previous == null || modifiedAt > previous.modifiedAt) {
             newest[player.info.accountId] = Entry(player, source, modifiedAt)
         }
-        return true
     }
 
     val isEmpty get() = newest.isEmpty()
