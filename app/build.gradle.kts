@@ -34,9 +34,10 @@ android {
     defaultConfig {
         applicationId = "moe.starmoe.box"
         minSdk = 26
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.1.3"
+        versionCode = 4
+        versionName = "0.1.4"
 
         // Logto v3 SDK: the redirect URI is <scheme>://<applicationId>/callback.
         manifestPlaceholders["logtoRedirectScheme"] = "moe.starmoe.box"
@@ -69,6 +70,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            if (providers.gradleProperty("previewBuild").orNull == "true") {
+                applicationIdSuffix = ".preview"
+            }
+        }
         release {
             // R8 drops the unused part of material-icons-extended and the rest; debug builds stay unshrunk.
             isMinifyEnabled = true
@@ -127,6 +133,8 @@ dependencies {
     implementation("dev.rikka.shizuku:aidl:13.1.5")
 
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
     // android.jar's org.json is a stub in local unit tests; the real one replaces it.
     testImplementation("org.json:json:20250517")
     // Reference Rijndael-256 to check ours against.

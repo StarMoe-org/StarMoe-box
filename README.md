@@ -112,3 +112,17 @@ Apache License 2.0. See [LICENSE](LICENSE).
 The official build receives the save decryption parameters through GitHub Actions Secrets; source builds without
 those secrets use deterministic test values and cannot decode real game saves. The encoded form in the official
 APK is only light obfuscation, not a security boundary.
+
+### Login expiry and app updates
+
+If Passport can no longer refresh a token, Box shows **登录已过期，请重新登录。** and restores the sign-in
+button. Network failures do not clear stored credentials, and local player data is retained.
+
+Box checks the latest stable GitHub Release once per day when launched. **应用更新 → 检查更新** runs a manual
+check at any time. A newer stable `vMAJOR.MINOR.PATCH` tag shows the release notes and a **下载新版本** link to
+the official release page. Failed checks can be retried and do not block local reading or exporting.
+
+For an isolated UI test installation, build debug with `-PpreviewBuild=true` (package `moe.starmoe.box.preview`).
+The login-expiry instrumentation fixture requires this isolated package and injects a synthetic Logto error;
+it never runs against the regular app's login. This preview does not have a registered Passport redirect or
+production save keys unless separately configured, and is not a replacement for the signed release.

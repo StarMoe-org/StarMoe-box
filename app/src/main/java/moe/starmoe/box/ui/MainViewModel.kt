@@ -13,6 +13,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.starmoe.box.BuildConfig
+import moe.starmoe.box.net.AppRelease
+import moe.starmoe.box.net.AppUpdates
+import moe.starmoe.box.net.newerVersion
+import moe.starmoe.box.net.isExpiredLogin
+import moe.starmoe.box.net.EXPIRED_LOGIN_MESSAGE
 import moe.starmoe.box.net.ApiException
 import moe.starmoe.box.net.Passport
 import moe.starmoe.box.net.PassportUser
@@ -53,6 +59,10 @@ data class GameGrant(val server: GameServer, val packageName: String, val tree: 
 
 data class UiState(
     val passportConfigured: Boolean = true,
+    val loginExpired: Boolean = false,
+    val checkingUpdate: Boolean = false,
+    val updateMessage: String? = null,
+    val release: AppRelease? = null,
     val user: PassportUser? = null,
     val signingIn: Boolean = false,
     val shizuku: ShizukuShell.Status = ShizukuShell.Status.NOT_RUNNING,
@@ -117,14 +127,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val passport = Passport(application)
     private val api = SavesApi()
+    private val updatePrefs = application.getSharedPreferences("updates", 0)
 
-    private val _state = MutableStateFlow(UiState(passportConfigured = passport.configured))
+    fun checkUpdate(manual: Boolean = true) {
+        if (_state.value.checkingUpdate) return
+        if (!manual && System.currentTimeMillis() - updatePrefs.getLong("lastCheck", 0) < 86400000L) return
+        viewModelScope.launch {
+            _state.update { it.copy(checkingUpdate = true) }
+            try {
+                val release = AppUpdates().latest()
+                updatePrefs.edit().putLong("lastCheck", System.currentTimeMillis())
+                    .putString("releaseVersion", release.version).putString("releaseNotes", release.notes)
+                    .putString("releaseUrl", release.url).apply()
+                val newer = newerVersion(release.version, BuildConfig.VERSION_NAME)
+                _state.update { it.copy(release = release.takeIf { newer },
+                    updateMessage = if (newer) "发现新版本 ${release.version}" else "当前已是最新版本") }
+            } catch (e: CancellationException) { throw e
+            } catch (e: Exception) {
+                if (manual) _state.update { it.copy(updateMessage = "检查更新失败，请检查网络后重试。") }
+            } finally { _state.update { it.copy(checkingUpdate = false) } }
+        }
+    }
+
+
+    private val _state = MutableStateFlow(UiState(passportConfigured = passport.configured,
+        loginExpired = updatePrefs.getBoolean("loginExpired", false),
+        release = updatePrefs.getString("releaseVersion", null)?.takeIf { newerVersion(it, BuildConfig.VERSION_NAME) }?.let {
+            AppRelease(it, updatePrefs.getString("releaseNotes", "").orEmpty(), updatePrefs.getString("releaseUrl", "").orEmpty())
+        }))
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     init {
         refreshShizuku()
         refreshGrants()
         viewModelScope.launch { loadUser() }
+        checkUpdate(false)
     }
 
     fun refreshShizuku() {
@@ -154,9 +191,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(signingIn = true) }
             try {
                 passport.signIn(activity)
+                updatePrefs.edit().putBoolean("loginExpired", false).apply()
+                _state.update { it.copy(loginExpired = false) }
                 loadUser()
             } catch (e: Exception) {
-                _state.update { it.copy(message = "登录没有完成：${e.message ?: e.javaClass.simpleName}") }
+                _state.update { it.copy(message = "登录没有完成：${describe(e)}") }
             } finally {
                 _state.update { it.copy(signingIn = false) }
             }
@@ -176,7 +215,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val list = api.list(passport.accessToken())
                 _state.update { it.copy(stored = list) }
+            } catch (e: CancellationException) { throw e
             } catch (e: Exception) {
+                _state.update { it.copy(message = "刷新失败：${describe(e)}") }
                 handleAuthFailure(e)
             }
         }
@@ -356,13 +397,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun setUpload(key: String, state: UploadState) = _state.update { it.copy(uploads = it.uploads + (key to state)) }
 
     private fun handleAuthFailure(e: Exception) {
-        if (e is ApiException && e.status == 401) {
+        if (isExpiredLogin(e)) {
             passport.forget()
-            _state.update { it.copy(user = null, stored = emptyList(), message = "登录已过期，请重新登录。") }
+            updatePrefs.edit().putBoolean("loginExpired", true).apply()
+            _state.update { it.copy(user = null, stored = emptyList(), loginExpired = true, message = EXPIRED_LOGIN_MESSAGE) }
         }
     }
 
     private fun describe(e: Exception): String = when {
+        isExpiredLogin(e) -> EXPIRED_LOGIN_MESSAGE
         e is ApiException -> when (e.code) {
             "too_soon" -> "上传太频繁，${e.retryAfter ?: 30} 秒后再试"
             "invalid_save" -> "服务器认不出这份存档"
@@ -371,8 +414,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             "invalid_token", "signed_out" -> "登录已过期"
             else -> "服务器错误（${e.status}${e.code?.let { " $it" } ?: ""}）"
         }
-        e is java.net.UnknownHostException || e is java.net.ConnectException -> "连不上服务器"
-        e is java.net.SocketTimeoutException -> "连接超时"
+        generateSequence<Throwable>(e) { it.cause }.take(16).any { it is java.net.UnknownHostException || it is java.net.ConnectException } -> "连不上服务器"
+        generateSequence<Throwable>(e) { it.cause }.take(16).any { it is java.net.SocketTimeoutException } -> "连接超时"
         else -> e.message ?: e.javaClass.simpleName
     }
 

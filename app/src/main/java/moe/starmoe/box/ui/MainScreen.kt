@@ -68,6 +68,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import moe.starmoe.box.BuildConfig
 import moe.starmoe.box.net.StoredSave
 import moe.starmoe.box.save.FoundSave
 import moe.starmoe.box.save.GameServer
@@ -227,6 +228,24 @@ fun MainScreen(vm: MainViewModel) {
                     }
                 }
             }
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("应用更新", style = MaterialTheme.typography.titleMedium)
+                        Text("当前版本 ${BuildConfig.VERSION_NAME}")
+                        state.updateMessage?.let { Text(it) }
+                        state.release?.let { release ->
+                            if (release.notes.isNotBlank()) Text(release.notes, maxLines = 6, overflow = TextOverflow.Ellipsis)
+                            Button(onClick = { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(release.url))) }) {
+                                Text("下载新版本")
+                            }
+                        }
+                        OutlinedButton(onClick = { vm.checkUpdate() }, enabled = !state.checkingUpdate) {
+                            Text(if (state.checkingUpdate) "正在检查…" else "检查更新")
+                        }
+                    }
+                }
+            }
             item { Footnote() }
         }
     }
@@ -243,6 +262,7 @@ private fun AccountCard(state: UiState, onSignIn: () -> Unit) {
             supportingContent = {
                 Text(
                     when {
+                        state.loginExpired -> "登录已过期，请重新登录。"
                         user != null -> user.username?.let { "@$it · 已登录" } ?: "已登录"
                         !state.passportConfigured -> "此版本未配置通行证，无法登录"
                         else -> "登录后可把存档上传到 StarMoe，在网站上查看"
@@ -255,7 +275,7 @@ private fun AccountCard(state: UiState, onSignIn: () -> Unit) {
                         if (state.signingIn) {
                             CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                         } else {
-                            Text("登录")
+                            Text(if (state.loginExpired) "重新登录" else "登录")
                         }
                     }
                 }
